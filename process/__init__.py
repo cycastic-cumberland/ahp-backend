@@ -12,6 +12,9 @@ class ProcessMatrixRequest(BaseModel):
     criteria_ri: Optional[float] = None
     selection_ri: Optional[float] = None
 
+class ValidationErrors(BaseModel):
+    validation_errors: list[str]
+
 class Table(BaseModel):
     column_headers: list[str]
     row_headers: list[str]

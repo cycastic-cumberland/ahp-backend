@@ -12,8 +12,8 @@ health_status = HealthCheck(status="OK", started=True)
 @router.get(
     "/healthz",
     tags=["healthcheck"],
-    summary="Perform a Health Check",
-    response_description="Return HTTP Status Code 200 (OK)",
+    summary="Kiểm tra sức khỏe server",
+    response_description="Trả 200 (OK) nếu còn sống",
     status_code=status.HTTP_200_OK,
     response_model=HealthCheck,
 )

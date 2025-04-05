@@ -41,7 +41,7 @@ def validate_request(request: ProcessMatrixRequest):
     if len(normalized_criteria) != CRITERIA_COUNT:
         errors.append("Có lựa chọn bị trùng lặp")
     if len(errors) > 0:
-        raise HTTPException(status_code=400, detail={ "validationErrors": errors })
+        raise HTTPException(status_code=400, detail=ValidationErrors(validation_errors=errors))
 
 def make_df(matrix: Matrix, headers: list[str]) -> pd.DataFrame:
     df = pd.DataFrame(matrix.data, columns=headers).rename(index={i: header for i, header in enumerate(headers)})
@@ -136,7 +136,17 @@ def create_scoreboard(complete_criteria: pd.DataFrame, data: dict[str, pd.DataFr
         highest_score=str(id_max)
     )
 
-@router.post("/process-matrix")
+@router.post("/process-matrix",
+             response_model=ProcessMatrixResponse,
+             summary="Tính ma trận với Tiêu chí và Lựa chọn được đặt sẵn",
+             description="Tham số optional: criteria_ri, selection_ri. Tham số không dùng đến: criteria_matrix.criteria_name",
+             response_description="Điểm tiêu chí, điểm lựa chọn, lựa chọn xếp hạn cao nhất",
+             responses={
+                 400: {
+                     "model": ValidationErrors,
+                     "description": "Request không chính xác"
+                 }
+             })
 def process_matrix(request: ProcessMatrixRequest) -> ProcessMatrixResponse:
     validate_request(request)
 
