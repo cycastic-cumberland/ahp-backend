@@ -6,6 +6,7 @@ from pydantic import BaseModel
 from starlette.requests import Request
 from starlette.responses import Response, JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from fastapi.middleware.cors import CORSMiddleware
 
 from misc import healthcheck
 from process import process_endpoint
@@ -43,6 +44,14 @@ async def add_process_time_header(request: Request, call_next: Callable[[Request
     response.headers["Access-Control-Allow-Origin"] = "*"
 
     return response
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["localhost:5173"],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 def main() -> None:
     uvicorn.run("main:app", host="0.0.0.0")
