@@ -141,6 +141,10 @@ def create_scoreboard(complete_criteria: pd.DataFrame, data: dict[str, pd.DataFr
         highest_score=str(id_max)
     )
 
+@router.options("/process-matrix")
+def process_matrix_options():
+    return Response(status_code=204)
+
 @router.post("/process-matrix",
              response_model=ProcessMatrixResponse,
              summary="Tính ma trận với Tiêu chí và Lựa chọn được đặt sẵn",
