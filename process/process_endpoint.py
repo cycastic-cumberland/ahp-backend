@@ -1,10 +1,15 @@
+import json
+
 from fastapi import APIRouter, HTTPException
 import pandas as pd
 import numpy as np
+from starlette.middleware.cors import CORSMiddleware
+from starlette.responses import Response
 
 from process import *
 
 router = APIRouter()
+
 
 CRITERIA = ["Chi phí đầu tư", "Tiêu thụ năng lượng", "Xuất khẩu năng lượng", "Công suất lắp đặt", "Phát thải CO2"]
 SELECTIONS = ["Điện mặt trời", "Điện gió", "Thủy điện", "Điện nhiệt"]
