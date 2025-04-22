@@ -191,7 +191,7 @@ def process_matrix_and_save_options():
     return Response(status_code=204)
 
 @router.post("/process-and-save-matrix",
-             response_model=ProcessMatrixResponse,
+             response_model=IdResponse,
              summary="Tính ma trận với Tiêu chí và Lựa chọn được đặt sẵn",
              description="Tham số optional: criteria_ri, selection_ri. Tham số không dùng đến: criteria_matrix.criteria_name",
              response_description="ID dẫn đến kết quả",
