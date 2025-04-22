@@ -11,12 +11,16 @@ from misc import healthcheck
 from process import process_endpoint
 from typing import Callable, Awaitable
 
-ORIGINS = ["http://localhost:8001"]
 app = FastAPI()
 
 app.include_router(healthcheck.router)
 app.include_router(process_endpoint.router)
 
+# @app.on_event("startup")
+# async def on_startup():
+#     # this runs inside the ASGI event loop
+#     async with async_engine.begin() as conn:
+#         await conn.run_sync(SQLModel.metadata.create_all)
 
 @app.exception_handler(StarletteHTTPException)
 async def http_exception_handler(request, exc):

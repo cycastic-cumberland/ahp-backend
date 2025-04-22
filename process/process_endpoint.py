@@ -1,11 +1,15 @@
 import json
+from typing import Annotated
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 import pandas as pd
 import numpy as np
+from sqlmodel import select
 from starlette.middleware.cors import CORSMiddleware
 from starlette.responses import Response
 
+from db import SessionDep
+from db.result import ResultModel
 from process import *
 
 router = APIRouter()
@@ -141,22 +145,7 @@ def create_scoreboard(complete_criteria: pd.DataFrame, data: dict[str, pd.DataFr
         highest_score=str(id_max)
     )
 
-@router.options("/process-matrix")
-def process_matrix_options():
-    return Response(status_code=204)
-
-@router.post("/process-matrix",
-             response_model=ProcessMatrixResponse,
-             summary="Tính ma trận với Tiêu chí và Lựa chọn được đặt sẵn",
-             description="Tham số optional: criteria_ri, selection_ri. Tham số không dùng đến: criteria_matrix.criteria_name",
-             response_description="Điểm tiêu chí, điểm lựa chọn, lựa chọn xếp hạn cao nhất",
-             responses={
-                 400: {
-                     "model": ValidationErrors,
-                     "description": "Request không chính xác"
-                 }
-             })
-def process_matrix(request: ProcessMatrixRequest) -> ProcessMatrixResponse:
+def process_matrix_internal(request: ProcessMatrixRequest) -> ProcessMatrixResponse:
     validate_request(request)
 
     criteria = make_df(request.criteria_matrix, CRITERIA)
@@ -178,3 +167,89 @@ def process_matrix(request: ProcessMatrixRequest) -> ProcessMatrixResponse:
         selections=[SelectionKeyPair(name=x, result=y) for x, y in reified_selections.items()],
         scoreboard=scoreboard
     )
+
+@router.options("/process-matrix")
+def process_matrix_options():
+    return Response(status_code=204)
+
+@router.post("/process-matrix",
+             response_model=ProcessMatrixResponse,
+             summary="Tính ma trận với Tiêu chí và Lựa chọn được đặt sẵn",
+             description="Tham số optional: criteria_ri, selection_ri. Tham số không dùng đến: criteria_matrix.criteria_name",
+             response_description="Điểm tiêu chí, điểm lựa chọn, lựa chọn xếp hạn cao nhất",
+             responses={
+                 400: {
+                     "model": ValidationErrors,
+                     "description": "Request không chính xác"
+                 }
+             })
+def process_matrix(request: ProcessMatrixRequest) -> ProcessMatrixResponse:
+    return process_matrix_internal(request)
+
+@router.options("/process-and-save-matrix")
+def process_matrix_and_save_options():
+    return Response(status_code=204)
+
+@router.post("/process-and-save-matrix",
+             response_model=ProcessMatrixResponse,
+             summary="Tính ma trận với Tiêu chí và Lựa chọn được đặt sẵn",
+             description="Tham số optional: criteria_ri, selection_ri. Tham số không dùng đến: criteria_matrix.criteria_name",
+             response_description="ID dẫn đến kết quả",
+             responses={
+                 400: {
+                     "model": ValidationErrors,
+                     "description": "Request không chính xác"
+                 }
+             })
+async def process_matrix_and_save(request: ProcessMatrixRequest, session: SessionDep) -> IdResponse:
+    response = process_matrix_internal(request)
+    result_model = ResultModel(id=None,
+                               criteria=response.criteria.model_dump(),
+                               selections=[x.model_dump() for x in response.selections],
+                               scoreboard=response.scoreboard.model_dump())
+    session.add(result_model)
+    await session.commit()
+    await session.refresh(result_model)
+    return IdResponse(id=result_model.id)
+
+@router.options("/results")
+def read_result_options():
+    return Response(status_code=204)
+
+@router.get("/results",
+             response_model=list[ResultModel],
+             summary="Truy vấn kết quả",
+             response_description="Danh sách kết quả")
+async def read_results(
+    session: SessionDep,
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(le=100)] = 10,
+) -> list[ResultModel]:
+    statement = select(ResultModel).order_by(ResultModel.id.desc()).offset(page - 1).limit(page_size)
+    coroutine_result = await session.execute(statement)
+    models: list[ResultModel] = coroutine_result.scalars().all()
+    return models
+
+@router.options("/result/{result_id}")
+def read_result_options():
+    return Response(status_code=204)
+
+@router.get("/result/{result_id}",
+             response_model=ResultModel,
+             summary="Truy vấn kết quả",
+             response_description="Kết quả",
+             responses={
+                 404: {
+                     "model": GeneralError,
+                     "description": "Kết quả không được tìm thấy"
+                 }
+             })
+async def read_result(
+    result_id: int,
+    session: SessionDep
+) -> ResultModel:
+    model: ResultModel = await session.get(ResultModel, result_id)
+    if not model:
+        raise HTTPException(status_code=404, detail=GeneralError())
+    return model
+

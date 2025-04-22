@@ -15,6 +15,9 @@ class ProcessMatrixRequest(BaseModel):
 class ValidationErrors(BaseModel):
     validation_errors: list[str]
 
+class GeneralError(BaseModel):
+    message: str = "Không tìm thấy kết quả"
+
 class Table(BaseModel):
     column_headers: list[str]
     row_headers: list[str]
@@ -42,6 +45,9 @@ class ProcessMatrixResponse(BaseModel):
     criteria: ProcessResult
     selections: list[SelectionKeyPair]
     scoreboard: ScoreboardData
+
+class IdResponse(BaseModel):
+    id: int
 
 def create_table(df: pd.DataFrame) -> Table:
     return Table(
