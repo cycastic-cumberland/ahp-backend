@@ -1,6 +1,15 @@
-from typing import Optional, Any
+from typing import Optional
 from pydantic import BaseModel
 import pandas as pd
+
+from db.result import ResultModel
+
+class ResultPage(BaseModel):
+    items: list[ResultModel]
+    page: int
+    page_size: int
+    total_item: int
+    total_page: int
 
 class Matrix(BaseModel):
     data: list[list[float]]
@@ -55,3 +64,5 @@ def create_table(df: pd.DataFrame) -> Table:
         row_headers=list(df.index.astype(str)),
         data=df.astype(float).values.tolist()
     )
+
+

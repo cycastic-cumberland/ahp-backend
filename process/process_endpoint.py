@@ -10,6 +10,7 @@ from starlette.responses import Response
 
 from db import SessionDep
 from db.result import ResultModel
+from sqlalchemy import func
 from process import *
 
 router = APIRouter()
@@ -217,18 +218,27 @@ def read_result_options():
     return Response(status_code=204)
 
 @router.get("/results",
-             response_model=list[ResultModel],
+             response_model=ResultPage,
              summary="Truy vấn kết quả",
              response_description="Danh sách kết quả")
 async def read_results(
     session: SessionDep,
     page: Annotated[int, Query(ge=1)] = 1,
     page_size: Annotated[int, Query(le=100)] = 10,
-) -> list[ResultModel]:
-    statement = select(ResultModel).order_by(ResultModel.id.desc()).offset(page - 1).limit(page_size)
+) -> ResultPage:
+    if page_size <= 0:
+        page_size = 1
+    statement = select(ResultModel).order_by(ResultModel.id.desc()).offset((page - 1) * page_size).limit(page_size)
     coroutine_result = await session.execute(statement)
+    total_item = (await session.execute(select(func.count()).select_from(select(ResultModel).subquery()))).scalar_one()
     models: list[ResultModel] = coroutine_result.scalars().all()
-    return models
+    return ResultPage(
+        items=models,
+        page=page,
+        page_size=page_size,
+        total_item=total_item,
+        total_page=(total_item // page_size) + 1
+    )
 
 @router.options("/result/{result_id}")
 def read_result_options():
