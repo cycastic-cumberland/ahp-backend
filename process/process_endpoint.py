@@ -1,7 +1,7 @@
 import json
 from typing import Annotated
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, UploadFile
 import pandas as pd
 import numpy as np
 from sqlmodel import select
@@ -12,6 +12,7 @@ from db import SessionDep
 from db.result import ResultModel
 from sqlalchemy import func
 from process import *
+from io import BytesIO
 
 router = APIRouter()
 
@@ -55,6 +56,15 @@ def validate_request(request: ProcessMatrixRequest):
 
 def make_df(matrix: Matrix, headers: list[str]) -> pd.DataFrame:
     df = pd.DataFrame(matrix.data, columns=headers).rename(index={i: header for i, header in enumerate(headers)})
+    return df
+
+def make_df_from_excel(excel_bytes, headers: list[str], is_excel=True) -> pd.DataFrame:
+    # read raw data, no header row
+    df = pd.read_excel(io=excel_bytes, header=None) if is_excel else pd.read_csv(BytesIO(excel_bytes), header=None)
+    # assign column names
+    df.columns = headers
+    # rename the row‐index to your headers (optional)
+    df = df.rename(index={i: h for i, h in enumerate(headers)})
     return df
 
 def process_criteria(criteria: pd.DataFrame, request_ri: Optional[float]) -> (ProcessResult, pd.DataFrame):
@@ -146,19 +156,16 @@ def create_scoreboard(complete_criteria: pd.DataFrame, data: dict[str, pd.DataFr
         highest_score=str(id_max)
     )
 
-def process_matrix_internal(request: ProcessMatrixRequest) -> ProcessMatrixResponse:
-    validate_request(request)
-
-    criteria = make_df(request.criteria_matrix, CRITERIA)
-    reified_criteria, criteria_df = process_criteria(criteria, request.criteria_ri)
-    selections: dict[str, pd.DataFrame] = {}
-    for selection in request.selection_matrices:
-        selections[selection.criteria_name] = make_df(selection, SELECTIONS)
+def process_matrix_super_internal(criteria: pd.DataFrame,
+                                  selections: dict[str, pd.DataFrame],
+                                  criteria_ri: Optional[float],
+                                  selection_ri: Optional[float]) -> ProcessMatrixResponse:
+    reified_criteria, criteria_df = process_criteria(criteria, criteria_ri)
 
     reified_selections: dict[str, ProcessResult] = {}
     selection_df: dict[str, pd.DataFrame] = {}
     for key, value in selections.items():
-        reified, df = process_selection(value, request.selection_ri)
+        reified, df = process_selection(value, selection_ri)
         reified_selections[key] = reified
         selection_df[key] = df
 
@@ -168,6 +175,16 @@ def process_matrix_internal(request: ProcessMatrixRequest) -> ProcessMatrixRespo
         selections=[SelectionKeyPair(name=x, result=y) for x, y in reified_selections.items()],
         scoreboard=scoreboard
     )
+
+def process_matrix_internal(request: ProcessMatrixRequest) -> ProcessMatrixResponse:
+    validate_request(request)
+
+    criteria = make_df(request.criteria_matrix, CRITERIA)
+    selections: dict[str, pd.DataFrame] = {}
+    for selection in request.selection_matrices:
+        selections[selection.criteria_name] = make_df(selection, SELECTIONS)
+
+    return process_matrix_super_internal(criteria, selections, request.criteria_ri, request.selection_ri)
 
 @router.options("/process-matrix")
 def process_matrix_options():
@@ -212,6 +229,59 @@ async def process_matrix_and_save(request: ProcessMatrixRequest, session: Sessio
     await session.commit()
     await session.refresh(result_model)
     return IdResponse(id=result_model.id)
+
+@router.post("/upload",
+             response_model=IdResponse,
+             summary="Tính ma trận với Tiêu chí và Lựa chọn được đặt sẵn",
+             description="Tham số optional: criteria_ri, selection_ri. Tham số không dùng đến: criteria_matrix.criteria_name",
+             response_description="ID dẫn đến kết quả",
+             responses={
+                 400: {
+                     "model": ValidationErrors,
+                     "description": "Request không chính xác"
+                 }
+             }
+             )
+async def upload(criteria_matrix: UploadFile,
+                                  selection_matrices: list[UploadFile],
+                                  session: SessionDep,
+                                  criteria_ri: Optional[float] = None,
+                                  selection_ri: Optional[float] = None) -> IdResponse:
+    errors: list[str] = []
+    criteria_df = make_df_from_excel(await criteria_matrix.read(), CRITERIA, criteria_matrix.filename.endswith('.xlsx'))
+    criteria_rows, criteria_columns = criteria_df.shape
+    if criteria_rows != CRITERIA_COUNT:
+        errors.append(f"Ma trận tiêu chí cần có {CRITERIA_COUNT} hàng")
+    if criteria_columns != CRITERIA_COUNT:
+        errors.append(f"Ma trận tiêu chí cần có {CRITERIA_COUNT} cột")
+    selections: dict[str, pd.DataFrame] = {}
+    if len(selection_matrices) != CRITERIA_COUNT:
+        errors.append(f"Cần có {CRITERIA_COUNT} sự lựa chọn")
+    i = 0
+    for selection in selection_matrices:
+        selection = make_df_from_excel(await selection.read(), SELECTIONS, selection.filename.endswith('.xlsx'))
+        selections[CRITERIA[i]] = selection
+        selection_rows, selection_columns = selection.shape
+        if selection_rows != SELECTION_COUNT:
+            errors.append(f"Ma trận của tiêu chí {CRITERIA[i]} cần có {CRITERIA_COUNT} hàng")
+        if selection_columns != SELECTION_COUNT:
+            errors.append(f"Ma trận của tiêu chí {CRITERIA[i]} cần có {CRITERIA_COUNT} cột")
+        i += 1
+    if len(errors) > 0:
+        raise HTTPException(status_code=400, detail=ValidationErrors(validation_errors=errors))
+    response = process_matrix_super_internal(criteria_df, selections, criteria_ri, selection_ri)
+    result_model = ResultModel(id=None,
+                               criteria=response.criteria.model_dump(),
+                               selections=[x.model_dump() for x in response.selections],
+                               scoreboard=response.scoreboard.model_dump())
+    session.add(result_model)
+    await session.commit()
+    await session.refresh(result_model)
+    return IdResponse(id=result_model.id)
+
+@router.options("/upload")
+def upload_options():
+    return Response(status_code=204)
 
 @router.options("/results")
 def read_result_options():
